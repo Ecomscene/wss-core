@@ -18,6 +18,8 @@ final class WSS_Core {
 
 	private $updater = null;
 
+	private $admin = null;
+
 	private $initialized = false;
 
 	public static function instance() {
@@ -50,9 +52,18 @@ final class WSS_Core {
 			'slug'     => dirname( WSS_CORE_BASENAME ),
 		) );
 		$this->updater->register();
+
+		if ( is_admin() ) {
+			$this->admin = new WSS_Admin();
+			$this->admin->register();
+		}
 	}
 
 	public function updater() {
 		return $this->updater;
+	}
+
+	public function admin() {
+		return $this->admin;
 	}
 }
