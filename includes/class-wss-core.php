@@ -20,6 +20,10 @@ final class WSS_Core {
 
 	private $admin = null;
 
+	private $hub_client = null;
+
+	private $snippets = null;
+
 	private $initialized = false;
 
 	public static function instance() {
@@ -53,8 +57,14 @@ final class WSS_Core {
 		) );
 		$this->updater->register();
 
+		$this->hub_client = new WSS_Hub_Client();
+		$this->hub_client->register();
+
+		$this->snippets = new WSS_Snippets();
+		$this->snippets->register();
+
 		if ( is_admin() ) {
-			$this->admin = new WSS_Admin();
+			$this->admin = new WSS_Admin( $this->hub_client );
 			$this->admin->register();
 		}
 	}
@@ -65,5 +75,13 @@ final class WSS_Core {
 
 	public function admin() {
 		return $this->admin;
+	}
+
+	public function hub_client() {
+		return $this->hub_client;
+	}
+
+	public function snippets() {
+		return $this->snippets;
 	}
 }
