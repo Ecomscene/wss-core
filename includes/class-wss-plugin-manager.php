@@ -1,8 +1,9 @@
 <?php
 /**
- * Reports installed plugins to the hub on every sync, and reconciles
- * active/inactive state for any plugin the hub has an assignment for —
- * whether the plugin came from the hub or was already installed.
+ * Reports installed plugins to the hub and installs any hub-pushed plugins
+ * that are not yet present on the site. Active/inactive state is no longer
+ * reconciled in the background — the user controls that imperatively from
+ * the hub UI (activate / deactivate / remove buttons).
  *
  * @package WSS_Core
  */
@@ -42,7 +43,6 @@ class WSS_Plugin_Manager {
 	}
 
 	public function sync() {
-		// Build current inventory.
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		$active_plugins = (array) get_option( 'active_plugins', array() );
 		$all_plugins    = get_plugins();
@@ -50,13 +50,12 @@ class WSS_Plugin_Manager {
 		foreach ( $all_plugins as $basename => $data ) {
 			$inventory[] = array(
 				'basename' => $basename,
-				'name'     => $data['Name'] ?? $basename,
+				'name'     => $data['Name']    ?? $basename,
 				'version'  => $data['Version'] ?? '',
 				'active'   => in_array( $basename, $active_plugins, true ),
 			);
 		}
 
-		// Send inventory + receive desired states.
 		$resp = $this->hub_client->post( '/api/plugins', array(
 			'installed_plugins' => $inventory,
 		) );
@@ -83,43 +82,34 @@ class WSS_Plugin_Manager {
 				continue;
 			}
 			$basename = (string) $p['basename'];
-			$state    = (string) ( $p['desired_state'] ?? 'active' );
 			$assignments[ $basename ] = array(
-				'name'         => (string) ( $p['name']    ?? $basename ),
-				'version'      => (string) ( $p['version'] ?? '' ),
-				'state'        => $state,
-				'hub_managed'  => ! empty( $p['download_path'] ),
+				'name'        => (string) ( $p['name']    ?? $basename ),
+				'version'     => (string) ( $p['version'] ?? '' ),
+				'state'       => (string) ( $p['desired_state'] ?? 'active' ),
+				'hub_managed' => ! empty( $p['download_path'] ),
 			);
 
-			$installed = file_exists( WP_PLUGIN_DIR . '/' . $basename );
-
-			// Hub-managed and not installed → download + install.
-			if ( ! $installed && ! empty( $p['download_path'] ) ) {
-				$installed = $this->install_plugin( $p );
-				$results[ $basename ] = $installed ? 'installed' : 'install_failed';
+			// Only act on missing hub-managed plugins: install them.
+			if ( empty( $p['download_path'] ) ) {
+				continue;
 			}
-
-			// Not installed and not hub-managed → can't act, skip.
-			if ( ! $installed ) {
-				if ( ! isset( $results[ $basename ] ) ) {
-					$results[ $basename ] = 'not_installed';
-				}
+			if ( file_exists( WP_PLUGIN_DIR . '/' . $basename ) ) {
 				continue;
 			}
 
-			$active         = is_plugin_active( $basename );
-			$desired_active = $state === 'active';
+			$installed = $this->install_plugin( $p );
+			if ( ! $installed ) {
+				$results[ $basename ] = 'install_failed';
+				continue;
+			}
+			$results[ $basename ] = 'installed';
 
-			if ( $desired_active && ! $active ) {
-				$res = activate_plugin( $basename, '', false, true );
-				$results[ $basename ] = is_wp_error( $res )
-					? 'activate_failed: ' . $res->get_error_message()
-					: 'activated';
-			} elseif ( ! $desired_active && $active ) {
-				deactivate_plugins( array( $basename ), true );
-				$results[ $basename ] = 'deactivated';
-			} elseif ( ! isset( $results[ $basename ] ) ) {
-				$results[ $basename ] = $desired_active ? 'active' : 'inactive';
+			// Honour the initial desired state when first installing.
+			if ( ( $p['desired_state'] ?? 'active' ) === 'active' ) {
+				$r = activate_plugin( $basename, '', false, true );
+				$results[ $basename ] = is_wp_error( $r )
+					? 'activate_failed: ' . $r->get_error_message()
+					: 'installed+activated';
 			}
 		}
 
