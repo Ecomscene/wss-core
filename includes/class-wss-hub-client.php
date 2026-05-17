@@ -19,8 +19,9 @@ class WSS_Hub_Client {
 	const OPT_STATUS       = 'wss_hub_status'; // pending|approved|error
 	const OPT_SNIPPETS     = 'wss_hub_snippets';
 
-	const CRON_HEARTBEAT = 'wss_hub_heartbeat';
-	const CRON_SYNC      = 'wss_hub_sync_snippets';
+	const CRON_HEARTBEAT     = 'wss_hub_heartbeat';
+	const CRON_SYNC          = 'wss_hub_sync_snippets';
+	const CRON_SYNC_PLUGINS  = 'wss_hub_sync_plugins';
 
 	private $hub_url;
 
@@ -38,6 +39,10 @@ class WSS_Hub_Client {
 		add_action( 'admin_init', array( $this, 'schedule_events' ) );
 	}
 
+	public function hub_url(): string {
+		return $this->hub_url;
+	}
+
 	public function activate() {
 		$this->schedule_events();
 	}
@@ -45,6 +50,62 @@ class WSS_Hub_Client {
 	public function deactivate() {
 		wp_clear_scheduled_hook( self::CRON_HEARTBEAT );
 		wp_clear_scheduled_hook( self::CRON_SYNC );
+		wp_clear_scheduled_hook( self::CRON_SYNC_PLUGINS );
+	}
+
+	/**
+	 * Public helper so other classes (e.g. WSS_Plugin_Manager) can do signed requests.
+	 *
+	 * @return array|false Parsed JSON response, or false on failure.
+	 */
+	public function get( string $path ) {
+		return $this->signed_get( $path );
+	}
+
+	/**
+	 * Stream a signed GET response to a file. Returns the local file path on success.
+	 */
+	public function download_to_file( string $path ): ?string {
+		$uuid   = get_option( self::OPT_SITE_UUID );
+		$secret = get_option( self::OPT_SITE_SECRET );
+		if ( ! $uuid || ! $secret ) {
+			return null;
+		}
+
+		$timestamp = time();
+		$nonce     = wp_generate_password( 16, false );
+		$to_sign   = 'GET' . "\n" . $path . "\n" . $timestamp . "\n" . $nonce . "\n";
+		$signature = hash_hmac( 'sha256', $to_sign, $secret );
+
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		$tmp = wp_tempnam( 'wss-core-' );
+
+		$response = wp_remote_get( $this->hub_url . $path, array(
+			'timeout'  => 120,
+			'stream'   => true,
+			'filename' => $tmp,
+			'headers'  => array(
+				'Accept'          => 'application/zip,application/octet-stream',
+				'User-Agent'      => 'WSS-Core/' . WSS_CORE_VERSION,
+				'X-WSS-Site'      => $uuid,
+				'X-WSS-Timestamp' => (string) $timestamp,
+				'X-WSS-Nonce'     => $nonce,
+				'X-WSS-Signature' => $signature,
+			),
+		) );
+
+		if ( is_wp_error( $response ) ) {
+			@unlink( $tmp );
+			$this->set_error( 'download ' . $path . ': ' . $response->get_error_message() );
+			return null;
+		}
+		$code = wp_remote_retrieve_response_code( $response );
+		if ( 200 !== (int) $code ) {
+			@unlink( $tmp );
+			$this->set_error( 'download ' . $path . ': status=' . $code );
+			return null;
+		}
+		return $tmp;
 	}
 
 	public function schedule_events() {
@@ -53,6 +114,9 @@ class WSS_Hub_Client {
 		}
 		if ( ! wp_next_scheduled( self::CRON_SYNC ) ) {
 			wp_schedule_event( time() + 60, 'wss_5min', self::CRON_SYNC );
+		}
+		if ( ! wp_next_scheduled( self::CRON_SYNC_PLUGINS ) ) {
+			wp_schedule_event( time() + 90, 'wss_5min', self::CRON_SYNC_PLUGINS );
 		}
 	}
 

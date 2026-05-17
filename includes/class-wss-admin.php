@@ -14,9 +14,11 @@ class WSS_Admin {
 	const MENU_SLUG = 'wss-core';
 
 	private $hub_client;
+	private $plugin_manager;
 
-	public function __construct( WSS_Hub_Client $hub_client ) {
-		$this->hub_client = $hub_client;
+	public function __construct( WSS_Hub_Client $hub_client, WSS_Plugin_Manager $plugin_manager ) {
+		$this->hub_client     = $hub_client;
+		$this->plugin_manager = $plugin_manager;
 	}
 
 	public function register() {
@@ -40,6 +42,7 @@ class WSS_Admin {
 		}
 		check_admin_referer( 'wss_force_sync' );
 		$this->hub_client->force_resync();
+		$this->plugin_manager->force_sync();
 		wp_safe_redirect( admin_url( 'index.php?page=' . self::MENU_SLUG . '&synced=1' ) );
 		exit;
 	}
@@ -49,7 +52,9 @@ class WSS_Admin {
 			return;
 		}
 
-		$status = $this->hub_client->status();
+		$status        = $this->hub_client->status();
+		$plugin_status = $this->plugin_manager->status();
+
 		$badge_colors = array(
 			'approved'     => '#46b450',
 			'pending'      => '#ffb900',
@@ -86,17 +91,31 @@ class WSS_Admin {
 						</td>
 					</tr>
 					<tr>
-						<th><?php esc_html_e( 'Last sync', 'wss-core' ); ?></th>
+						<th><?php esc_html_e( 'Last snippet sync', 'wss-core' ); ?></th>
 						<td><?php echo $status['last_sync'] ? esc_html( human_time_diff( $status['last_sync'] ) . ' ago' ) : '—'; ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Last plugin sync', 'wss-core' ); ?></th>
+						<td><?php echo $plugin_status['last_sync'] ? esc_html( human_time_diff( $plugin_status['last_sync'] ) . ' ago' ) : '—'; ?></td>
 					</tr>
 					<tr>
 						<th><?php esc_html_e( 'Active snippets', 'wss-core' ); ?></th>
 						<td><?php echo (int) count( array_filter( $status['snippets'], static function ( $s ) { return ! empty( $s['active'] ); } ) ); ?> / <?php echo (int) count( $status['snippets'] ); ?></td>
 					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Managed plugins', 'wss-core' ); ?></th>
+						<td><?php echo (int) count( $plugin_status['managed'] ); ?></td>
+					</tr>
 					<?php if ( ! empty( $status['last_error'] ) ) : ?>
 					<tr>
-						<th><?php esc_html_e( 'Last error', 'wss-core' ); ?></th>
+						<th><?php esc_html_e( 'Last hub error', 'wss-core' ); ?></th>
 						<td><code style="color:#dc3232;"><?php echo esc_html( $status['last_error'] ); ?></code></td>
+					</tr>
+					<?php endif; ?>
+					<?php if ( ! empty( $plugin_status['last_error'] ) ) : ?>
+					<tr>
+						<th><?php esc_html_e( 'Last plugin error', 'wss-core' ); ?></th>
+						<td><code style="color:#dc3232;"><?php echo esc_html( $plugin_status['last_error'] ); ?></code></td>
 					</tr>
 					<?php endif; ?>
 					<tr>
@@ -132,6 +151,32 @@ class WSS_Admin {
 							<td><?php echo esc_html( $s['name'] ); ?></td>
 							<td><code><?php echo esc_html( $s['type'] ); ?></code></td>
 							<td><?php echo ! empty( $s['active'] ) ? '✅' : '—'; ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $plugin_status['managed'] ) ) : ?>
+				<h2 style="margin-top:2em;"><?php esc_html_e( 'Managed plugins', 'wss-core' ); ?></h2>
+				<table class="widefat striped" style="max-width:900px;">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'Plugin', 'wss-core' ); ?></th>
+							<th><?php esc_html_e( 'Main file', 'wss-core' ); ?></th>
+							<th><?php esc_html_e( 'Version', 'wss-core' ); ?></th>
+							<th><?php esc_html_e( 'Desired', 'wss-core' ); ?></th>
+							<th><?php esc_html_e( 'Last action', 'wss-core' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $plugin_status['managed'] as $basename => $m ) : ?>
+						<tr>
+							<td><strong><?php echo esc_html( $m['name'] ); ?></strong></td>
+							<td><code><?php echo esc_html( $basename ); ?></code></td>
+							<td><code><?php echo esc_html( $m['version'] ); ?></code></td>
+							<td><code><?php echo esc_html( $m['state'] ); ?></code></td>
+							<td><code><?php echo esc_html( $plugin_status['last_result'][ $basename ] ?? '' ); ?></code></td>
 						</tr>
 					<?php endforeach; ?>
 					</tbody>

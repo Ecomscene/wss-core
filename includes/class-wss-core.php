@@ -24,6 +24,8 @@ final class WSS_Core {
 
 	private $snippets = null;
 
+	private $plugin_manager = null;
+
 	private $initialized = false;
 
 	public static function instance() {
@@ -63,8 +65,11 @@ final class WSS_Core {
 		$this->snippets = new WSS_Snippets();
 		$this->snippets->register();
 
+		$this->plugin_manager = new WSS_Plugin_Manager( $this->hub_client );
+		$this->plugin_manager->register();
+
 		if ( is_admin() ) {
-			$this->admin = new WSS_Admin( $this->hub_client );
+			$this->admin = new WSS_Admin( $this->hub_client, $this->plugin_manager );
 			$this->admin->register();
 		}
 	}
@@ -83,5 +88,9 @@ final class WSS_Core {
 
 	public function snippets() {
 		return $this->snippets;
+	}
+
+	public function plugin_manager() {
+		return $this->plugin_manager;
 	}
 }
