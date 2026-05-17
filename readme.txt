@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,11 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.3.0 =
+* Added: Client now reports its full installed-plugin inventory to the hub on every sync, so the hub site detail page can show every plugin (not just hub-managed ones).
+* Added: Hub assignments are now keyed by plugin basename, so you can set active/inactive on plugins that were already installed (e.g. WooCommerce, Yoast, etc.) — not just the ones you uploaded.
+* Changed: /api/plugins is now a POST endpoint (body carries the inventory).
 
 = 1.2.0 =
 * Added: WSS Plugin Manager. Pulls plugin assignments from the hub every 5 min, installs missing plugins from signed ZIP downloads, and reconciles active/inactive state.

@@ -62,6 +62,10 @@ class WSS_Hub_Client {
 		return $this->signed_get( $path );
 	}
 
+	public function post( string $path, array $body ) {
+		return $this->signed_post( $path, $body );
+	}
+
 	/**
 	 * Stream a signed GET response to a file. Returns the local file path on success.
 	 */

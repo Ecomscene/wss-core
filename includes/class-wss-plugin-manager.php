@@ -1,6 +1,8 @@
 <?php
 /**
- * Pulls plugin assignments from the WSS Hub and reconciles install / active state.
+ * Reports installed plugins to the hub on every sync, and reconciles
+ * active/inactive state for any plugin the hub has an assignment for —
+ * whether the plugin came from the hub or was already installed.
  *
  * @package WSS_Core
  */
@@ -11,10 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class WSS_Plugin_Manager {
 
-	const OPT_MANAGED       = 'wss_managed_plugins';
-	const OPT_LAST_SYNC     = 'wss_managed_plugins_last_sync';
-	const OPT_LAST_RESULT   = 'wss_managed_plugins_last_result';
-	const OPT_LAST_ERROR    = 'wss_managed_plugins_last_error';
+	const OPT_LAST_SYNC    = 'wss_managed_plugins_last_sync';
+	const OPT_LAST_RESULT  = 'wss_managed_plugins_last_result';
+	const OPT_LAST_ERROR   = 'wss_managed_plugins_last_error';
+	const OPT_ASSIGNMENTS  = 'wss_managed_plugins_assignments';
 
 	private $hub_client;
 
@@ -28,7 +30,7 @@ class WSS_Plugin_Manager {
 
 	public function status() {
 		return array(
-			'managed'     => (array) get_option( self::OPT_MANAGED, array() ),
+			'assignments' => (array) get_option( self::OPT_ASSIGNMENTS, array() ),
 			'last_sync'   => (int) get_option( self::OPT_LAST_SYNC, 0 ),
 			'last_result' => (array) get_option( self::OPT_LAST_RESULT, array() ),
 			'last_error'  => get_option( self::OPT_LAST_ERROR, '' ),
@@ -40,8 +42,27 @@ class WSS_Plugin_Manager {
 	}
 
 	public function sync() {
-		$resp = $this->hub_client->get( '/api/plugins' );
+		// Build current inventory.
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		$active_plugins = (array) get_option( 'active_plugins', array() );
+		$all_plugins    = get_plugins();
+		$inventory      = array();
+		foreach ( $all_plugins as $basename => $data ) {
+			$inventory[] = array(
+				'basename' => $basename,
+				'name'     => $data['Name'] ?? $basename,
+				'version'  => $data['Version'] ?? '',
+				'active'   => in_array( $basename, $active_plugins, true ),
+			);
+		}
+
+		// Send inventory + receive desired states.
+		$resp = $this->hub_client->post( '/api/plugins', array(
+			'installed_plugins' => $inventory,
+		) );
+
 		if ( ! is_array( $resp ) || ! isset( $resp['plugins'] ) ) {
+			update_option( self::OPT_LAST_SYNC, time(), false );
 			return;
 		}
 		if ( ( $resp['status'] ?? '' ) !== 'approved' ) {
@@ -51,53 +72,58 @@ class WSS_Plugin_Manager {
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 		require_once ABSPATH . 'wp-admin/includes/misc.php';
-		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-
 		WP_Filesystem();
 
-		$managed = array();
-		$results = array();
+		$assignments = array();
+		$results     = array();
 
 		foreach ( (array) $resp['plugins'] as $p ) {
-			if ( empty( $p['main_file'] ) || empty( $p['download_path'] ) ) {
+			if ( empty( $p['basename'] ) ) {
 				continue;
 			}
-			$basename = (string) $p['main_file'];
-			$managed[ $basename ] = array(
-				'id'      => (int) ( $p['id'] ?? 0 ),
-				'name'    => (string) ( $p['name'] ?? '' ),
-				'slug'    => (string) ( $p['slug'] ?? '' ),
-				'version' => (string) ( $p['version'] ?? '' ),
-				'state'   => (string) ( $p['desired_state'] ?? 'active' ),
+			$basename = (string) $p['basename'];
+			$state    = (string) ( $p['desired_state'] ?? 'active' );
+			$assignments[ $basename ] = array(
+				'name'         => (string) ( $p['name']    ?? $basename ),
+				'version'      => (string) ( $p['version'] ?? '' ),
+				'state'        => $state,
+				'hub_managed'  => ! empty( $p['download_path'] ),
 			);
 
 			$installed = file_exists( WP_PLUGIN_DIR . '/' . $basename );
 
-			if ( ! $installed ) {
+			// Hub-managed and not installed → download + install.
+			if ( ! $installed && ! empty( $p['download_path'] ) ) {
 				$installed = $this->install_plugin( $p );
 				$results[ $basename ] = $installed ? 'installed' : 'install_failed';
 			}
 
-			if ( $installed ) {
-				$active         = is_plugin_active( $basename );
-				$desired_active = ( $p['desired_state'] ?? 'active' ) === 'active';
-
-				if ( $desired_active && ! $active ) {
-					$res = activate_plugin( $basename, '', false, true );
-					$results[ $basename ] = is_wp_error( $res )
-						? ( 'activate_failed: ' . $res->get_error_message() )
-						: 'activated';
-				} elseif ( ! $desired_active && $active ) {
-					deactivate_plugins( array( $basename ), true );
-					$results[ $basename ] = 'deactivated';
-				} elseif ( ! isset( $results[ $basename ] ) ) {
-					$results[ $basename ] = $desired_active ? 'active' : 'inactive';
+			// Not installed and not hub-managed → can't act, skip.
+			if ( ! $installed ) {
+				if ( ! isset( $results[ $basename ] ) ) {
+					$results[ $basename ] = 'not_installed';
 				}
+				continue;
+			}
+
+			$active         = is_plugin_active( $basename );
+			$desired_active = $state === 'active';
+
+			if ( $desired_active && ! $active ) {
+				$res = activate_plugin( $basename, '', false, true );
+				$results[ $basename ] = is_wp_error( $res )
+					? 'activate_failed: ' . $res->get_error_message()
+					: 'activated';
+			} elseif ( ! $desired_active && $active ) {
+				deactivate_plugins( array( $basename ), true );
+				$results[ $basename ] = 'deactivated';
+			} elseif ( ! isset( $results[ $basename ] ) ) {
+				$results[ $basename ] = $desired_active ? 'active' : 'inactive';
 			}
 		}
 
-		update_option( self::OPT_MANAGED, $managed, false );
+		update_option( self::OPT_ASSIGNMENTS, $assignments, false );
 		update_option( self::OPT_LAST_RESULT, $results, false );
 		update_option( self::OPT_LAST_SYNC, time(), false );
 	}
@@ -111,9 +137,7 @@ class WSS_Plugin_Manager {
 
 		$skin     = new WP_Upgrader_Skin();
 		$upgrader = new Plugin_Upgrader( $skin );
-
-		// Plugin_Upgrader::install() accepts a local file path.
-		$result = $upgrader->install( $tmp, array( 'overwrite_package' => true ) );
+		$result   = $upgrader->install( $tmp, array( 'overwrite_package' => true ) );
 
 		@unlink( $tmp );
 
@@ -126,8 +150,7 @@ class WSS_Plugin_Manager {
 			return false;
 		}
 
-		// Successful install. Clear any prior error.
 		delete_option( self::OPT_LAST_ERROR );
-		return file_exists( WP_PLUGIN_DIR . '/' . $p['main_file'] );
+		return file_exists( WP_PLUGIN_DIR . '/' . $p['basename'] );
 	}
 }

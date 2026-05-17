@@ -103,8 +103,8 @@ class WSS_Admin {
 						<td><?php echo (int) count( array_filter( $status['snippets'], static function ( $s ) { return ! empty( $s['active'] ); } ) ); ?> / <?php echo (int) count( $status['snippets'] ); ?></td>
 					</tr>
 					<tr>
-						<th><?php esc_html_e( 'Managed plugins', 'wss-core' ); ?></th>
-						<td><?php echo (int) count( $plugin_status['managed'] ); ?></td>
+						<th><?php esc_html_e( 'Plugin assignments', 'wss-core' ); ?></th>
+						<td><?php echo (int) count( $plugin_status['assignments'] ); ?></td>
 					</tr>
 					<?php if ( ! empty( $status['last_error'] ) ) : ?>
 					<tr>
@@ -157,24 +157,24 @@ class WSS_Admin {
 				</table>
 			<?php endif; ?>
 
-			<?php if ( ! empty( $plugin_status['managed'] ) ) : ?>
-				<h2 style="margin-top:2em;"><?php esc_html_e( 'Managed plugins', 'wss-core' ); ?></h2>
+			<?php if ( ! empty( $plugin_status['assignments'] ) ) : ?>
+				<h2 style="margin-top:2em;"><?php esc_html_e( 'Plugin assignments', 'wss-core' ); ?></h2>
 				<table class="widefat striped" style="max-width:900px;">
 					<thead>
 						<tr>
 							<th><?php esc_html_e( 'Plugin', 'wss-core' ); ?></th>
 							<th><?php esc_html_e( 'Main file', 'wss-core' ); ?></th>
-							<th><?php esc_html_e( 'Version', 'wss-core' ); ?></th>
+							<th><?php esc_html_e( 'Source', 'wss-core' ); ?></th>
 							<th><?php esc_html_e( 'Desired', 'wss-core' ); ?></th>
 							<th><?php esc_html_e( 'Last action', 'wss-core' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
-					<?php foreach ( $plugin_status['managed'] as $basename => $m ) : ?>
+					<?php foreach ( $plugin_status['assignments'] as $basename => $m ) : ?>
 						<tr>
 							<td><strong><?php echo esc_html( $m['name'] ); ?></strong></td>
 							<td><code><?php echo esc_html( $basename ); ?></code></td>
-							<td><code><?php echo esc_html( $m['version'] ); ?></code></td>
+							<td><?php echo ! empty( $m['hub_managed'] ) ? 'hub library' : 'site'; ?></td>
 							<td><code><?php echo esc_html( $m['state'] ); ?></code></td>
 							<td><code><?php echo esc_html( $plugin_status['last_result'][ $basename ] ?? '' ); ?></code></td>
 						</tr>
