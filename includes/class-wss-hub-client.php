@@ -145,6 +145,7 @@ class WSS_Hub_Client {
 	public function register_site() {
 		$payload = array(
 			'site_url'    => home_url( '/' ),
+			'rest_url'    => rest_url(),
 			'admin_email' => get_bloginfo( 'admin_email' ),
 			'site_name'   => get_bloginfo( 'name' ),
 			'wp_version'  => get_bloginfo( 'version' ),
@@ -195,6 +196,7 @@ class WSS_Hub_Client {
 
 		$payload = array(
 			'site_url'       => home_url( '/' ),
+			'rest_url'       => rest_url(),
 			'site_name'      => get_bloginfo( 'name' ),
 			'admin_email'    => get_bloginfo( 'admin_email' ),
 			'wp_version'     => get_bloginfo( 'version' ),

@@ -26,6 +26,8 @@ final class WSS_Core {
 
 	private $plugin_manager = null;
 
+	private $webhook = null;
+
 	private $initialized = false;
 
 	public static function instance() {
@@ -67,6 +69,9 @@ final class WSS_Core {
 
 		$this->plugin_manager = new WSS_Plugin_Manager( $this->hub_client );
 		$this->plugin_manager->register();
+
+		$this->webhook = new WSS_Webhook( $this->hub_client, $this->plugin_manager );
+		$this->webhook->register();
 
 		if ( is_admin() ) {
 			$this->admin = new WSS_Admin( $this->hub_client, $this->plugin_manager );

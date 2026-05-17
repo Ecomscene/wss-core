@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,10 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.4.0 =
+* Added: REST endpoint /wp-json/wss-core/v1/sync for hub-triggered force-sync. HMAC-authenticated with the site secret.
+* Added: Reports rest_url on registration + heartbeat so the hub knows where to call back.
 
 = 1.3.0 =
 * Added: Client now reports its full installed-plugin inventory to the hub on every sync, so the hub site detail page can show every plugin (not just hub-managed ones).
