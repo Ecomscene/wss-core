@@ -58,6 +58,15 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/self-update',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_self_update' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/ping',
 			array(
 				'methods'             => 'GET',
@@ -102,6 +111,67 @@ class WSS_Webhook {
 		$expected = hash_hmac( 'sha256', $to_sign, $stored_secret );
 
 		return hash_equals( $expected, $signature );
+	}
+
+	public function handle_self_update( WP_REST_Request $request ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+		require_once ABSPATH . 'wp-admin/includes/update.php';
+
+		WP_Filesystem();
+
+		$basename       = WSS_CORE_BASENAME;
+		$version_before = WSS_CORE_VERSION;
+		$was_active     = is_plugin_active( $basename );
+
+		// Force a fresh check against GitHub via our own updater so the
+		// update_plugins transient knows about the newest release.
+		delete_site_transient( 'update_plugins' );
+		delete_transient( 'wss_core_github_release' );
+		wp_clean_plugins_cache( true );
+		wp_update_plugins();
+
+		$skin     = new WP_Upgrader_Skin();
+		$upgrader = new Plugin_Upgrader( $skin );
+		$result   = $upgrader->upgrade( $basename );
+
+		// Re-read the version from the (possibly new) main file.
+		$main_path = WP_PLUGIN_DIR . '/' . $basename;
+		$version_after = $version_before;
+		if ( file_exists( $main_path ) ) {
+			$h = get_plugin_data( $main_path, false, false );
+			$version_after = $h['Version'] ?? $version_before;
+		}
+
+		$status = 'updated';
+		$ok     = true;
+		if ( is_wp_error( $result ) ) {
+			$status = 'upgrade_failed: ' . $result->get_error_message();
+			$ok     = false;
+		} elseif ( $result === false ) {
+			$status = 'no_update_available';
+		} elseif ( $version_before === $version_after ) {
+			$status = 'reinstalled';
+		}
+
+		// Reactivate if we got deactivated during the swap.
+		if ( $was_active && ! is_plugin_active( $basename ) ) {
+			$r = activate_plugin( $basename, '', false, true );
+			if ( is_wp_error( $r ) ) {
+				$status .= '; reactivate_failed: ' . $r->get_error_message();
+			} else {
+				$status .= '; reactivated';
+			}
+		}
+
+		return new WP_REST_Response( array(
+			'ok'     => $ok,
+			'result' => $status,
+			'from'   => $version_before,
+			'to'     => $version_after,
+		), 200 );
 	}
 
 	public function handle_elementor_update( WP_REST_Request $request ) {
