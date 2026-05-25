@@ -18,6 +18,7 @@ class WSS_Plugin_Manager {
 	const OPT_LAST_RESULT  = 'wss_managed_plugins_last_result';
 	const OPT_LAST_ERROR   = 'wss_managed_plugins_last_error';
 	const OPT_ASSIGNMENTS  = 'wss_managed_plugins_assignments';
+	const OPT_PACKAGES     = 'wss_managed_plugins_packages'; // basename → hub updated_at when installed
 
 	private $hub_client;
 
@@ -76,6 +77,7 @@ class WSS_Plugin_Manager {
 
 		$assignments = array();
 		$results     = array();
+		$packages    = (array) get_option( self::OPT_PACKAGES, array() );
 
 		foreach ( (array) $resp['plugins'] as $p ) {
 			if ( empty( $p['basename'] ) ) {
@@ -89,23 +91,33 @@ class WSS_Plugin_Manager {
 				'hub_managed' => ! empty( $p['download_path'] ),
 			);
 
-			// Only act on missing hub-managed plugins: install them.
+			// Only the hub-managed plugins can be installed by us.
 			if ( empty( $p['download_path'] ) ) {
 				continue;
 			}
-			if ( file_exists( WP_PLUGIN_DIR . '/' . $basename ) ) {
+
+			$file_exists    = file_exists( WP_PLUGIN_DIR . '/' . $basename );
+			$hub_package_id = (string) ( $p['updated_at'] ?? '' );
+			$stored_pkg_id  = (string) ( $packages[ $basename ] ?? '' );
+
+			// Skip iff plugin is on disk AND we've already installed this exact build.
+			if ( $file_exists && $hub_package_id !== '' && $hub_package_id === $stored_pkg_id ) {
 				continue;
 			}
 
-			$installed = $this->install_plugin( $p );
+			$is_first_install = ! $file_exists;
+			$installed        = $this->install_plugin( $p );
 			if ( ! $installed ) {
-				$results[ $basename ] = 'install_failed';
+				$results[ $basename ] = $is_first_install ? 'install_failed' : 'reinstall_failed';
 				continue;
 			}
-			$results[ $basename ] = 'installed';
+
+			$results[ $basename ] = $is_first_install ? 'installed' : 'reinstalled';
+			$packages[ $basename ] = $hub_package_id;
 
 			// Honour the initial desired state when first installing.
-			if ( ( $p['desired_state'] ?? 'active' ) === 'active' ) {
+			// On a reinstall, leave activation state alone (user's choice from imperative buttons rules).
+			if ( $is_first_install && ( $p['desired_state'] ?? 'active' ) === 'active' ) {
 				$r = activate_plugin( $basename, '', false, true );
 				$results[ $basename ] = is_wp_error( $r )
 					? 'activate_failed: ' . $r->get_error_message()
@@ -115,6 +127,7 @@ class WSS_Plugin_Manager {
 
 		update_option( self::OPT_ASSIGNMENTS, $assignments, false );
 		update_option( self::OPT_LAST_RESULT, $results, false );
+		update_option( self::OPT_PACKAGES, $packages, false );
 		update_option( self::OPT_LAST_SYNC, time(), false );
 	}
 

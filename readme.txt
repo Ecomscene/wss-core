@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.6.0
+Stable tag: 1.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,9 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.7.0 =
+* Changed: Plugin manager now re-installs a hub-managed plugin whenever the hub's package timestamp changes — supports the new "Repack from workspace" dev workflow.
 
 = 1.6.0 =
 * Added: REST endpoint /wp-json/wss-core/v1/elementor-update — hub-triggered one-click force update of Elementor / Elementor Pro / Pro Elements, with automatic reactivation.
