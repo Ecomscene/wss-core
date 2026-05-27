@@ -67,6 +67,22 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/theme-functions',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => array( $this, 'handle_theme_functions_get' ),
+					'permission_callback' => array( $this, 'authorize' ),
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, 'handle_theme_functions_post' ),
+					'permission_callback' => array( $this, 'authorize' ),
+				),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/ping',
 			array(
 				'methods'             => 'GET',
@@ -111,6 +127,125 @@ class WSS_Webhook {
 		$expected = hash_hmac( 'sha256', $to_sign, $stored_secret );
 
 		return hash_equals( $expected, $signature );
+	}
+
+	public function handle_theme_functions_get( WP_REST_Request $request ) {
+		$info = $this->theme_functions_info();
+		if ( ! $info['exists'] ) {
+			return new WP_REST_Response( array(
+				'ok'    => false,
+				'error' => 'functions_php_not_found',
+				'theme' => $info['theme'],
+			), 200 );
+		}
+		$content = @file_get_contents( $info['path'] );
+		if ( $content === false ) {
+			return new WP_REST_Response( array(
+				'ok'    => false,
+				'error' => 'read_failed',
+				'theme' => $info['theme'],
+			), 500 );
+		}
+		return new WP_REST_Response( array(
+			'ok'       => true,
+			'content'  => $content,
+			'size'     => strlen( $content ),
+			'modified' => filemtime( $info['path'] ),
+			'writable' => is_writable( $info['path'] ),
+			'theme'    => $info['theme'],
+		), 200 );
+	}
+
+	public function handle_theme_functions_post( WP_REST_Request $request ) {
+		$content = $request->get_param( 'content' );
+		if ( $content === null ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'missing_content' ), 400 );
+		}
+		$content = (string) $content;
+
+		// 1) Syntax check WITHOUT executing the code.
+		$syntax = $this->php_syntax_check( $content );
+		if ( ! $syntax['ok'] ) {
+			return new WP_REST_Response( array(
+				'ok'      => false,
+				'error'   => 'syntax_error',
+				'message' => $syntax['message'],
+				'line'    => $syntax['line'],
+			), 400 );
+		}
+
+		$info = $this->theme_functions_info();
+		$path = $info['path'];
+
+		// 2) Writability checks.
+		if ( file_exists( $path ) && ! is_writable( $path ) ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'not_writable' ), 403 );
+		}
+		if ( ! file_exists( $path ) && ! is_writable( dirname( $path ) ) ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'directory_not_writable' ), 403 );
+		}
+
+		// 3) Backup the existing file (keep last 5).
+		if ( file_exists( $path ) ) {
+			$backup_path = $path . '.wss-backup-' . date( 'Ymd-His' );
+			if ( ! @copy( $path, $backup_path ) ) {
+				return new WP_REST_Response( array( 'ok' => false, 'error' => 'backup_failed' ), 500 );
+			}
+			$backups = glob( $path . '.wss-backup-*' ) ?: array();
+			rsort( $backups );
+			foreach ( array_slice( $backups, 5 ) as $old ) {
+				@unlink( $old );
+			}
+		}
+
+		// 4) Write.
+		$bytes = @file_put_contents( $path, $content );
+		if ( $bytes === false ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'write_failed' ), 500 );
+		}
+
+		return new WP_REST_Response( array(
+			'ok'       => true,
+			'size'     => $bytes,
+			'modified' => filemtime( $path ),
+			'theme'    => $info['theme'],
+		), 200 );
+	}
+
+	private function theme_functions_info(): array {
+		$theme = wp_get_theme();
+		$dir   = get_stylesheet_directory();
+		$path  = $dir . '/functions.php';
+		return array(
+			'path'   => $path,
+			'exists' => file_exists( $path ),
+			'theme'  => array(
+				'name'       => $theme ? $theme->get( 'Name' )    : '',
+				'version'    => $theme ? $theme->get( 'Version' ) : '',
+				'stylesheet' => get_stylesheet(),
+				'template'   => get_template(),
+				'path'       => $dir,
+			),
+		);
+	}
+
+	/**
+	 * Parse PHP without executing it. Returns ok=true if it tokenises cleanly.
+	 */
+	private function php_syntax_check( string $code ): array {
+		// PhpToken::tokenize is PHP 8+; fall back to token_get_all with TOKEN_PARSE on 7.x.
+		try {
+			if ( class_exists( '\\PhpToken' ) ) {
+				\PhpToken::tokenize( $code, TOKEN_PARSE );
+			} else {
+				token_get_all( $code, TOKEN_PARSE );
+			}
+			return array( 'ok' => true );
+		} catch ( \ParseError $e ) {
+			return array( 'ok' => false, 'message' => $e->getMessage(), 'line' => $e->getLine() );
+		} catch ( \Throwable $e ) {
+			return array( 'ok' => false, 'message' => $e->getMessage(), 'line' => 0 );
+		}
 	}
 
 	public function handle_self_update( WP_REST_Request $request ) {
