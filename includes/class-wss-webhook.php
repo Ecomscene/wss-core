@@ -457,7 +457,10 @@ class WSS_Webhook {
 		} else {
 			switch ( $action ) {
 				case 'activate':
-					$r = activate_plugin( $basename, '', false, true );
+					// $silent=false so register_activation_hook callbacks fire.
+					ob_start();
+					$r = activate_plugin( $basename, '', false, false );
+					ob_end_clean();
 					if ( is_wp_error( $r ) ) {
 						$ok     = false;
 						$result = 'activate_failed: ' . $r->get_error_message();

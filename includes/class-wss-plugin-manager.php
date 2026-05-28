@@ -119,7 +119,12 @@ class WSS_Plugin_Manager {
 			// Honour the initial desired state when first installing.
 			// On a reinstall, leave activation state alone (user's choice from imperative buttons rules).
 			if ( $is_first_install && ( $p['desired_state'] ?? 'active' ) === 'active' ) {
-				$r = activate_plugin( $basename, '', false, true );
+				// $silent=false so register_activation_hook callbacks fire (e.g. plugins that mint
+				// tokens / seed options on activation). Output buffered so stray echo doesn't break
+				// our REST response.
+				ob_start();
+				$r = activate_plugin( $basename, '', false, false );
+				ob_end_clean();
 				$results[ $basename ] = is_wp_error( $r )
 					? 'activate_failed: ' . $r->get_error_message()
 					: 'installed+activated';
