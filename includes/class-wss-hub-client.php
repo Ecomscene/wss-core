@@ -295,6 +295,20 @@ class WSS_Hub_Client {
 		$data = json_decode( $raw, true );
 
 		if ( 200 !== (int) $code ) {
+			// Hub no longer recognises us (likely deleted from hub UI). Clear stored
+			// credentials so the next admin/page-load runs maybe_register_site() and
+			// re-pairs the site from scratch.
+			if ( (int) $code === 401 ) {
+				$err = json_decode( $raw, true );
+				$err_code = is_array( $err ) ? ( $err['error'] ?? '' ) : '';
+				if ( $err_code === 'unknown_site' ) {
+					delete_option( self::OPT_SITE_UUID );
+					delete_option( self::OPT_SITE_SECRET );
+					delete_option( self::OPT_STATUS );
+					$this->set_error( 'site missing on hub — credentials cleared, will re-register' );
+					return false;
+				}
+			}
 			$this->set_error( $method . ' ' . $path . ': status=' . $code );
 			return false;
 		}

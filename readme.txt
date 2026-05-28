@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.10.1
+Stable tag: 1.10.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,9 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.10.2 =
+* Fixed: auto re-register when the hub returns "unknown_site" — happens when a site is deleted from the hub UI. The client clears its stale UUID/secret and re-pairs on the next admin page load.
 
 = 1.10.1 =
 * Fixed: plugin activation now fires register_activation_hook callbacks (was previously silent), so plugins like Claude Bridge that mint a token on activation work correctly when installed via the hub.
