@@ -67,6 +67,15 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/claude-bridge-regen',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_claude_bridge_regen' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/theme-functions',
 			array(
 				array(
@@ -127,6 +136,26 @@ class WSS_Webhook {
 		$expected = hash_hmac( 'sha256', $to_sign, $stored_secret );
 
 		return hash_equals( $expected, $signature );
+	}
+
+	public function handle_claude_bridge_regen( WP_REST_Request $request ) {
+		$cb_main = WP_PLUGIN_DIR . '/claude-bridge/claude-bridge.php';
+		if ( ! file_exists( $cb_main ) ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'not_installed' ), 404 );
+		}
+
+		// Matches Claude Bridge's own mint_token().
+		try {
+			$token = 'cb_' . bin2hex( random_bytes( 32 ) );
+		} catch ( \Throwable $e ) {
+			$token = 'cb_' . wp_generate_password( 64, false );
+		}
+		update_option( 'claude_bridge_token', $token );
+
+		return new WP_REST_Response( array(
+			'ok'    => true,
+			'token' => $token,
+		), 200 );
 	}
 
 	public function handle_theme_functions_get( WP_REST_Request $request ) {

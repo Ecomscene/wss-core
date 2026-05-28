@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.9.0
+Stable tag: 1.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,10 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.10.0 =
+* Added: Reports the Claude Bridge bearer token to the hub via heartbeat and 5-min plugin sync.
+* Added: REST endpoint /wp-json/wss-core/v1/claude-bridge-regen — hub-triggered token regeneration.
 
 = 1.9.0 =
 * Added: REST endpoints GET/POST /wp-json/wss-core/v1/theme-functions — hub can read and write the active theme's functions.php with syntax-check before save and auto-backup of the previous version (last 5 kept).

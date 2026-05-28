@@ -58,7 +58,8 @@ class WSS_Plugin_Manager {
 		}
 
 		$resp = $this->hub_client->post( '/api/plugins', array(
-			'installed_plugins' => $inventory,
+			'installed_plugins'   => $inventory,
+			'claude_bridge_token' => (string) get_option( 'claude_bridge_token', '' ),
 		) );
 
 		if ( ! is_array( $resp ) || ! isset( $resp['plugins'] ) ) {

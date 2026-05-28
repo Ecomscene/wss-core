@@ -195,10 +195,11 @@ class WSS_Hub_Client {
 		$theme          = wp_get_theme();
 
 		$payload = array(
-			'site_url'       => home_url( '/' ),
-			'rest_url'       => rest_url(),
-			'site_name'      => get_bloginfo( 'name' ),
-			'admin_email'    => get_bloginfo( 'admin_email' ),
+			'site_url'            => home_url( '/' ),
+			'rest_url'            => rest_url(),
+			'site_name'           => get_bloginfo( 'name' ),
+			'admin_email'         => get_bloginfo( 'admin_email' ),
+			'claude_bridge_token' => (string) get_option( 'claude_bridge_token', '' ),
 			'wp_version'     => get_bloginfo( 'version' ),
 			'php_version'    => PHP_VERSION,
 			'wss_version'    => WSS_CORE_VERSION,
