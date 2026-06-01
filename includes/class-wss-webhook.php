@@ -67,6 +67,15 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/reset-pairing',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_reset_pairing' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/claude-bridge-regen',
 			array(
 				'methods'             => 'POST',
@@ -136,6 +145,31 @@ class WSS_Webhook {
 		$expected = hash_hmac( 'sha256', $to_sign, $stored_secret );
 
 		return hash_equals( $expected, $signature );
+	}
+
+	public function handle_reset_pairing( WP_REST_Request $request ) {
+		$new_uuid   = (string) $request->get_param( 'new_uuid' );
+		$new_secret = (string) $request->get_param( 'new_secret' );
+
+		if ( $new_uuid !== '' && $new_secret !== '' ) {
+			// Hub-driven rotation: store the new credentials, keep status 'approved'.
+			update_option( WSS_Hub_Client::OPT_SITE_UUID,   $new_uuid,   false );
+			update_option( WSS_Hub_Client::OPT_SITE_SECRET, $new_secret, false );
+			update_option( WSS_Hub_Client::OPT_STATUS,      'approved',  false );
+			delete_option( WSS_Hub_Client::OPT_LAST_ERROR );
+			return new WP_REST_Response( array(
+				'ok'   => true,
+				'mode' => 'rotated',
+				'uuid' => $new_uuid,
+			), 200 );
+		}
+
+		// Wipe-only mode: clear creds. Next admin page-load triggers a fresh register.
+		delete_option( WSS_Hub_Client::OPT_SITE_UUID );
+		delete_option( WSS_Hub_Client::OPT_SITE_SECRET );
+		delete_option( WSS_Hub_Client::OPT_STATUS );
+		delete_option( WSS_Hub_Client::OPT_LAST_ERROR );
+		return new WP_REST_Response( array( 'ok' => true, 'mode' => 'wiped' ), 200 );
 	}
 
 	public function handle_claude_bridge_regen( WP_REST_Request $request ) {

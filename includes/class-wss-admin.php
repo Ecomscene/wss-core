@@ -24,6 +24,24 @@ class WSS_Admin {
 	public function register() {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_post_wss_force_sync', array( $this, 'handle_force_sync' ) );
+		add_action( 'admin_post_wss_reregister', array( $this, 'handle_reregister' ) );
+	}
+
+	public function handle_reregister() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Forbidden', 403 );
+		}
+		check_admin_referer( 'wss_reregister' );
+		// Wipe local hub credentials so maybe_register_site() runs fresh.
+		delete_option( WSS_Hub_Client::OPT_SITE_UUID );
+		delete_option( WSS_Hub_Client::OPT_SITE_SECRET );
+		delete_option( WSS_Hub_Client::OPT_STATUS );
+		delete_option( WSS_Hub_Client::OPT_LAST_ERROR );
+		delete_option( WSS_Hub_Client::OPT_LAST_SYNC );
+		// Trigger registration immediately, before the redirect.
+		$this->hub_client->register_site();
+		wp_safe_redirect( admin_url( 'index.php?page=' . self::MENU_SLUG . '&reregistered=1' ) );
+		exit;
 	}
 
 	public function add_menu() {
@@ -69,6 +87,9 @@ class WSS_Admin {
 
 			<?php if ( ! empty( $_GET['synced'] ) ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Hub sync forced.', 'wss-core' ); ?></p></div>
+			<?php endif; ?>
+			<?php if ( ! empty( $_GET['reregistered'] ) ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Re-registered with the hub. A new UUID was assigned. Approve the new entry in the hub UI if needed.', 'wss-core' ); ?></p></div>
 			<?php endif; ?>
 
 			<h2><?php esc_html_e( 'Hub status', 'wss-core' ); ?></h2>
@@ -130,6 +151,11 @@ class WSS_Admin {
 					<?php wp_nonce_field( 'wss_force_sync' ); ?>
 					<input type="hidden" name="action" value="wss_force_sync" />
 					<button type="submit" class="button button-primary"><?php esc_html_e( 'Force sync now', 'wss-core' ); ?></button>
+				</form>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;margin-left:8px;" onsubmit="return confirm('<?php esc_attr_e( 'Wipe local hub credentials and re-register from scratch? Use this after cloning/migrating a site so it gets a fresh identity in the hub.', 'wss-core' ); ?>');">
+					<?php wp_nonce_field( 'wss_reregister' ); ?>
+					<input type="hidden" name="action" value="wss_reregister" />
+					<button type="submit" class="button"><?php esc_html_e( 'Re-register with hub', 'wss-core' ); ?></button>
 				</form>
 			</p>
 
