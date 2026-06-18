@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.11.1
+Stable tag: 1.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,9 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.12.0 =
+* Added: real single-sign-on via HMAC-signed magic-link URL. Hub can generate a one-time login link (60s TTL, single-use nonce) that drops the operator straight into wp-admin without typing a password.
 
 = 1.11.1 =
 * Fixed: reinstalls of active plugins (e.g. after a hub repack-from-workspace) now deactivate before reinstall and reactivate after. Plugin_Upgrader::install with overwrite_package was silently failing to replace files on active plugins, leaving the old version installed despite reporting success.

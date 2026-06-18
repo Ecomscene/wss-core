@@ -73,6 +73,8 @@ final class WSS_Core {
 		$this->webhook = new WSS_Webhook( $this->hub_client, $this->plugin_manager );
 		$this->webhook->register();
 
+		( new WSS_SSO() )->register();
+
 		if ( is_admin() ) {
 			$this->admin = new WSS_Admin( $this->hub_client, $this->plugin_manager );
 			$this->admin->register();
