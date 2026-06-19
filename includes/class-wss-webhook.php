@@ -101,6 +101,31 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/wp-config',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => array( $this, 'handle_wp_config_get' ),
+					'permission_callback' => array( $this, 'authorize' ),
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, 'handle_wp_config_post' ),
+					'permission_callback' => array( $this, 'authorize' ),
+				),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
+			'/permalinks-flush',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_permalinks_flush' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/ping',
 			array(
 				'methods'             => 'GET',
@@ -145,6 +170,107 @@ class WSS_Webhook {
 		$expected = hash_hmac( 'sha256', $to_sign, $stored_secret );
 
 		return hash_equals( $expected, $signature );
+	}
+
+	private function wp_config_path() {
+		$candidates = array( ABSPATH . 'wp-config.php', dirname( ABSPATH ) . '/wp-config.php' );
+		foreach ( $candidates as $p ) {
+			if ( file_exists( $p ) && is_file( $p ) ) {
+				return $p;
+			}
+		}
+		return null;
+	}
+
+	public function handle_wp_config_get( WP_REST_Request $request ) {
+		$path = $this->wp_config_path();
+		if ( ! $path ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'wp-config.php not found' ), 404 );
+		}
+		$content = @file_get_contents( $path );
+		if ( $content === false ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'read_failed' ), 500 );
+		}
+		return new WP_REST_Response( array(
+			'ok'       => true,
+			'content'  => $content,
+			'size'     => strlen( $content ),
+			'modified' => filemtime( $path ),
+			'writable' => is_writable( $path ),
+			'path'     => $path,
+		), 200 );
+	}
+
+	public function handle_wp_config_post( WP_REST_Request $request ) {
+		$content = $request->get_param( 'content' );
+		if ( $content === null ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'missing_content' ), 400 );
+		}
+		$content = (string) $content;
+
+		// Syntax check.
+		try {
+			if ( class_exists( '\\PhpToken' ) ) {
+				\PhpToken::tokenize( $content, TOKEN_PARSE );
+			} else {
+				token_get_all( $content, TOKEN_PARSE );
+			}
+		} catch ( \ParseError $e ) {
+			return new WP_REST_Response( array(
+				'ok'      => false,
+				'error'   => 'syntax_error',
+				'message' => $e->getMessage(),
+				'line'    => $e->getLine(),
+			), 400 );
+		} catch ( \Throwable $e ) {
+			return new WP_REST_Response( array(
+				'ok'    => false,
+				'error' => 'parse_failed',
+				'message' => $e->getMessage(),
+			), 400 );
+		}
+
+		$path = $this->wp_config_path();
+		if ( ! $path ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'wp-config.php not found' ), 404 );
+		}
+		if ( ! is_writable( $path ) ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'not_writable' ), 403 );
+		}
+
+		// Backup current.
+		$backup_path = $path . '.wss-backup-' . date( 'Ymd-His' );
+		if ( ! @copy( $path, $backup_path ) ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'backup_failed' ), 500 );
+		}
+		// Prune old backups (keep last 5).
+		$backups = glob( $path . '.wss-backup-*' ) ?: array();
+		rsort( $backups );
+		foreach ( array_slice( $backups, 5 ) as $old ) {
+			@unlink( $old );
+		}
+
+		$bytes = @file_put_contents( $path, $content );
+		if ( $bytes === false ) {
+			return new WP_REST_Response( array( 'ok' => false, 'error' => 'write_failed' ), 500 );
+		}
+
+		return new WP_REST_Response( array(
+			'ok'       => true,
+			'size'     => $bytes,
+			'modified' => filemtime( $path ),
+			'backup'   => basename( $backup_path ),
+		), 200 );
+	}
+
+	public function handle_permalinks_flush( WP_REST_Request $request ) {
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+		// Flush rewrite rules + write .htaccess (if writable).
+		flush_rewrite_rules( true );
+		return new WP_REST_Response( array(
+			'ok'      => true,
+			'message' => 'Permalinks flushed (rewrite rules regenerated).',
+		), 200 );
 	}
 
 	public function handle_reset_pairing( WP_REST_Request $request ) {
