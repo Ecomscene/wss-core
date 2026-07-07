@@ -126,6 +126,15 @@ class WSS_Webhook {
 		);
 		register_rest_route(
 			self::NAMESPACE_PATH,
+			'/health-data',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'handle_health_data' ),
+				'permission_callback' => array( $this, 'authorize' ),
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE_PATH,
 			'/ping',
 			array(
 				'methods'             => 'GET',
@@ -139,6 +148,115 @@ class WSS_Webhook {
 				'permission_callback' => array( $this, 'authorize' ),
 			)
 		);
+	}
+
+	/**
+	 * Gathers all site-side health metrics in one call for the hub's Klant Health Score module.
+	 * Everything is guarded so a missing WooCommerce (or anything else) never fatals the request.
+	 */
+	public function handle_health_data( WP_REST_Request $request ) {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		require_once ABSPATH . 'wp-admin/includes/update.php';
+
+		$data = array(
+			'ok'          => true,
+			'collected_at' => time(),
+			'wss_version' => WSS_CORE_VERSION,
+		);
+
+		// --- Core versions ---
+		global $wp_version, $wpdb;
+		$data['wp_version']  = $wp_version;
+		$data['php_version'] = PHP_VERSION;
+		$data['mysql_version'] = method_exists( $wpdb, 'db_version' ) ? $wpdb->db_version() : '';
+
+		// --- Active theme ---
+		$theme = wp_get_theme();
+		$data['theme'] = array(
+			'name'    => $theme ? $theme->get( 'Name' ) : '',
+			'version' => $theme ? $theme->get( 'Version' ) : '',
+		);
+
+		// --- Plugins + available updates ---
+		$all_plugins    = get_plugins();
+		$active_plugins = (array) get_option( 'active_plugins', array() );
+		wp_update_plugins();
+		$updates = get_plugin_updates();
+		$data['plugins'] = array(
+			'total'         => count( $all_plugins ),
+			'active'        => count( $active_plugins ),
+			'updates'       => count( is_array( $updates ) ? $updates : array() ),
+			'update_slugs'  => array_values( array_map( static function ( $u ) {
+				return isset( $u->Name ) ? $u->Name : '';
+			}, is_array( $updates ) ? $updates : array() ) ),
+		);
+
+		// --- WooCommerce ---
+		$woo = array( 'active' => false, 'version' => '', 'products' => 0, 'orders_30' => 0, 'orders_90' => 0, 'last_order' => null, 'revenue_30' => 0.0 );
+		if ( class_exists( 'WooCommerce' ) ) {
+			$woo['active']  = true;
+			$woo['version'] = defined( 'WC_VERSION' ) ? WC_VERSION : '';
+
+			// Product count.
+			$counts = wp_count_posts( 'product' );
+			$woo['products'] = isset( $counts->publish ) ? (int) $counts->publish : 0;
+
+			// Orders — use wc_get_orders (HPOS-safe) when available.
+			if ( function_exists( 'wc_get_orders' ) ) {
+				$now = current_time( 'timestamp' );
+				$statuses = array( 'wc-completed', 'wc-processing', 'wc-on-hold' );
+
+				$q30 = wc_get_orders( array(
+					'limit'        => -1,
+					'return'       => 'ids',
+					'status'       => $statuses,
+					'date_created' => '>' . ( $now - 30 * DAY_IN_SECONDS ),
+				) );
+				$woo['orders_30'] = is_array( $q30 ) ? count( $q30 ) : 0;
+
+				$q90 = wc_get_orders( array(
+					'limit'        => -1,
+					'return'       => 'ids',
+					'status'       => $statuses,
+					'date_created' => '>' . ( $now - 90 * DAY_IN_SECONDS ),
+				) );
+				$woo['orders_90'] = is_array( $q90 ) ? count( $q90 ) : 0;
+
+				// Revenue last 30 days.
+				$rev = 0.0;
+				foreach ( (array) $q30 as $oid ) {
+					$o = wc_get_order( $oid );
+					if ( $o ) { $rev += (float) $o->get_total(); }
+				}
+				$woo['revenue_30'] = round( $rev, 2 );
+
+				// Last order date (any recent status).
+				$last = wc_get_orders( array(
+					'limit'   => 1,
+					'return'  => 'ids',
+					'orderby' => 'date',
+					'order'   => 'DESC',
+					'status'  => array_merge( $statuses, array( 'wc-pending', 'wc-refunded' ) ),
+				) );
+				if ( ! empty( $last ) ) {
+					$lo = wc_get_order( $last[0] );
+					if ( $lo && $lo->get_date_created() ) {
+						$woo['last_order'] = $lo->get_date_created()->getTimestamp();
+					}
+				}
+			}
+		}
+		$data['woocommerce'] = $woo;
+
+		// --- Site age ---
+		// Earliest published post = practical "content launch"; also expose WP install proxy.
+		$earliest = $wpdb->get_var( "SELECT post_date_gmt FROM {$wpdb->posts} WHERE post_status = 'publish' AND post_type IN ('post','page','product') ORDER BY post_date_gmt ASC LIMIT 1" );
+		$data['first_content'] = $earliest ? strtotime( $earliest . ' UTC' ) : null;
+		// Oldest user registration as an install-age proxy.
+		$oldest_user = $wpdb->get_var( "SELECT user_registered FROM {$wpdb->users} ORDER BY user_registered ASC LIMIT 1" );
+		$data['install_proxy'] = $oldest_user ? strtotime( $oldest_user . ' UTC' ) : null;
+
+		return new WP_REST_Response( $data, 200 );
 	}
 
 	public function authorize( WP_REST_Request $request ) {
