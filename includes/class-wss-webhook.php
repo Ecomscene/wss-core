@@ -222,9 +222,13 @@ class WSS_Webhook {
 				) );
 				$woo['orders_90'] = is_array( $q90 ) ? count( $q90 ) : 0;
 
-				// Revenue last 30 days.
+				// Revenue last 30 days. Hydrating orders one-by-one is expensive, so cap
+				// the loop on busy shops and flag when the figure is a capped sample.
 				$rev = 0.0;
-				foreach ( (array) $q30 as $oid ) {
+				$cap = 500;
+				$ids30 = (array) $q30;
+				$woo['revenue_capped'] = count( $ids30 ) > $cap;
+				foreach ( array_slice( $ids30, 0, $cap ) as $oid ) {
 					$o = wc_get_order( $oid );
 					if ( $o ) { $rev += (float) $o->get_total(); }
 				}

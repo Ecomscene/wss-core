@@ -4,7 +4,7 @@ Tags: core, updater, github
 Requires at least: 5.8
 Tested up to: 6.5
 Requires PHP: 7.4
-Stable tag: 1.14.0
+Stable tag: 1.14.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,9 @@ Lightweight base plugin for Webshopschool client websites. Provides a stable fou
 WSS Core is a base plugin used on Webshopschool client websites. It currently exposes no frontend or admin features — it exists so future functionality can be pushed to all client sites through GitHub releases.
 
 == Changelog ==
+
+= 1.14.1 =
+* Hardened: health-data revenue calculation is now capped at 500 orders (with a revenue_capped flag) to avoid timeouts/OOM on high-volume shops.
 
 = 1.14.0 =
 * Added: GET /wp-json/wss-core/v1/health-data — single-call collector for the hub's Klant Health Score module (WP/PHP/MySQL versions, plugin update count, WooCommerce product/order/revenue metrics, site age). WooCommerce-guarded, HMAC-authed.
